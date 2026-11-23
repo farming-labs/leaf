@@ -7,18 +7,18 @@
 const SCRIPT = /<script(\s+module)?\s*>([\s\S]*?)<\/script>/g;
 const IMPORT = /^[ \t]*import\s(?:[^;'"]*?\sfrom\s*)?(["'])[^"'\n]+\1;?[ \t]*$/gm;
 
-export function compileLeaf(source, name = "LeafComponent") {
+export function compileLeaf(source: string, name = "LeafComponent"): string {
   let moduleScript = "";
   let renderScript = "";
   const markup = source
-    .replace(SCRIPT, (_, isModule, body) => {
+    .replace(SCRIPT, (_, isModule: string | undefined, body: string) => {
       if (isModule) moduleScript += body;
       else renderScript += body;
       return "";
     })
     .trim();
   // Imports are module-level, wherever the file writes them.
-  const imports = [];
+  const imports: string[] = [];
   const body = renderScript.replace(IMPORT, (statement) => {
     imports.push(statement.trim());
     return "";
@@ -35,12 +35,9 @@ export function compileLeaf(source, name = "LeafComponent") {
 }
 
 /** `badge.leaf` → `Badge`, `[name].leaf` → `Name`. */
-export function componentName(file) {
-  const base = file
-    .split(/[\\/]/)
-    .pop()
-    .replace(/\.leaf$/, "");
+export function componentName(file: string): string {
+  const base = (file.split(/[\\/]/).pop() ?? "").replace(/\.leaf$/, "");
   const words = base.match(/[A-Za-z0-9]+/g) ?? ["Leaf"];
-  const name = words.map((word) => word[0].toUpperCase() + word.slice(1)).join("");
+  const name = words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join("");
   return /^[A-Za-z]/.test(name) ? name : `Leaf${name}`;
 }

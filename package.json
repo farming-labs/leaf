@@ -7,6 +7,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "prepare": "pnpm build:packages",
+    "build:packages": "pnpm -r --filter \"./packages/*\" build",
     "dev": "pnpm --filter leaf-app dev",
     "build": "pnpm --filter leaf-app build",
     "start": "node app/.farm/.output/server/index.mjs",

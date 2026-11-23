@@ -7,36 +7,40 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "default": "./src/index.js"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./server": {
-      "types": "./src/server.d.ts",
-      "default": "./src/server.js"
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
     },
     "./client": {
-      "types": "./src/client.d.ts",
-      "default": "./src/client.js"
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
     },
     "./vite": {
-      "types": "./src/vite.d.ts",
-      "default": "./src/vite.js"
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
     },
     "./bindings": {
-      "types": "./src/bindings.d.ts",
-      "default": "./src/bindings.js"
+      "types": "./dist/bindings.d.ts",
+      "default": "./dist/bindings.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@farm.js/core": "0.1.81",
     "@farm.js/renderer-tests": "0.1.0-beta.1",
     "jsdom": "^25.0.0",
     "leaf": "workspace:*",
-    "typescript": "^5.3.3",
+    "typescript": "5.9.3",
     "vite": "8.3.4",
     "vitest": "5.0.5"
   },

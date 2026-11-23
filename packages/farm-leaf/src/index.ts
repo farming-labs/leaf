@@ -1,8 +1,8 @@
 // The renderer descriptor an app passes to `renderer` in farm.config.ts.
 
-import { defineRenderer } from "@farm.js/core/renderer";
+import { defineRenderer, type FarmRenderer } from "@farm.js/core/renderer";
 
-export function leaf() {
+export function leaf(): FarmRenderer {
   return defineRenderer({
     name: "leaf",
     // Module ids, not functions: farm.config.ts stays serializable and each module resolves

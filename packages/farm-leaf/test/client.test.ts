@@ -31,7 +31,7 @@ describe("leaf in the browser", () => {
     }
     const container = document.createElement("div");
     container.innerHTML = renderToString(createElement(Counter, null));
-    const button = container.firstElementChild;
+    const button = container.firstElementChild as HTMLButtonElement;
     hydrateRoot(container, createElement(Counter, null));
 
     button.click();
@@ -41,7 +41,7 @@ describe("leaf in the browser", () => {
   });
 
   it("runs effects after commit and their cleanup on unmount", async () => {
-    const log = [];
+    const log: string[] = [];
     function Effect() {
       useEffect(() => {
         log.push("mounted");
@@ -57,7 +57,7 @@ describe("leaf in the browser", () => {
   });
 
   it("keeps a component's state when its parent re-renders it in place", async () => {
-    let setLabel;
+    let setLabel!: (label: string) => void;
     function Child() {
       const [count, setCount] = useState(0);
       return createElement("button", { onClick: () => setCount((n) => n + 1) }, String(count));
@@ -74,7 +74,7 @@ describe("leaf in the browser", () => {
     }
     const container = document.createElement("div");
     createRoot(container).render(createElement(Parent, null));
-    container.querySelector("button").click();
+    container.querySelector("button")!.click();
     await nextTask();
     setLabel("b");
     await nextTask();

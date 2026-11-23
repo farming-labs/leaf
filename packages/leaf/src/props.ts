@@ -24,31 +24,31 @@ const UNITLESS = new Set([
   "zoom",
 ]);
 
-export function styleValue(name, value) {
+export function styleValue(name: string, value: unknown): unknown {
   return typeof value === "number" && value !== 0 && !UNITLESS.has(name) ? `${value}px` : value;
 }
 
-export function cssName(name) {
+export function cssName(name: string): string {
   return name.startsWith("--")
     ? name
     : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
-const ATTRIBUTE_NAMES = { className: "class", htmlFor: "for" };
+const ATTRIBUTE_NAMES: Record<string, string> = { className: "class", htmlFor: "for" };
 
-export function attributeName(name) {
+export function attributeName(name: string): string {
   return ATTRIBUTE_NAMES[name] ?? name;
 }
 
 /** `onClick` → `click`, `onDoubleClick` → `dblclick`; `onChange` on a field fires on input. */
-export function eventName(name, tag) {
+export function eventName(name: string, tag: string): string {
   const event = name.slice(2).toLowerCase();
   if (event === "doubleclick") return "dblclick";
   if (event === "change" && (tag === "input" || tag === "textarea")) return "input";
   return event;
 }
 
-export function isEventProp(name, value) {
+export function isEventProp(name: string, value: unknown): boolean {
   return name.length > 2 && name.startsWith("on") && typeof value === "function";
 }
 

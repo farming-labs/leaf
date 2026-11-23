@@ -4,7 +4,15 @@
 // A component may be async in the stream. It sends everything before each <Suspense> boundary as
 // soon as it's rendered, then waits for the async components inside it, in order.
 
-import { Fragment, Suspense, internals, toChildArray } from "./index.js";
+import {
+  Fragment,
+  Suspense,
+  internals,
+  toChildArray,
+  type Children,
+  type Dispatcher,
+  type LeafElement,
+} from "./index.js";
 import {
   RESERVED,
   VOID_ELEMENTS,
@@ -14,28 +22,35 @@ import {
   styleValue,
 } from "./props.js";
 
-const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
 
-export function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ESCAPES[character]);
+export function escapeHtml(value: unknown): string {
+  return String(value).replace(/[&<>"']/g, (character) => ESCAPES[character]!);
 }
 
-const serverDispatcher = {
-  useState: (initial) => [typeof initial === "function" ? initial() : initial, () => {}],
+const serverDispatcher: Dispatcher = {
+  useState: <T>(initial: T | (() => T)) =>
+    [typeof initial === "function" ? (initial as () => T)() : initial, () => {}] as [T, () => void],
   useEffect: () => {},
   useRef: (initial) => ({ current: initial }),
   useMemo: (compute) => compute(),
 };
 
-function renderStyle(style) {
+function renderStyle(style: unknown): string {
   if (typeof style === "string") return style;
-  return Object.entries(style)
+  return Object.entries(style as Record<string, unknown>)
     .filter(([, value]) => value != null && value !== false && value !== "")
     .map(([name, value]) => `${cssName(name)}:${styleValue(name, value)}`)
     .join(";");
 }
 
-function renderAttributes(type, props) {
+function renderAttributes(type: string, props: Record<string, unknown>): string {
   let html = "";
   for (let [name, value] of Object.entries(props)) {
     if (RESERVED.has(name) || value == null || value === false || isEventProp(name, value))
@@ -67,9 +82,12 @@ function renderAttributes(type, props) {
 
 // The renderer is a generator. It yields HTML strings, FLUSH where a Suspense boundary starts,
 // and the promise an async component returned; whoever drives it sends back the resolved output.
-const FLUSH = Symbol("leaf.flush");
+const FLUSH: unique symbol = Symbol("leaf.flush");
 
-function* renderNode(node) {
+type Step = string | typeof FLUSH | Promise<Children>;
+type Render = Generator<Step, void, Children>;
+
+function* renderNode(node: LeafElement | string): Render {
   if (typeof node === "string") {
     yield escapeHtml(node);
     return;
@@ -82,8 +100,8 @@ function* renderNode(node) {
   }
   if (typeof type === "function") {
     let output = internals.render(type, props, serverDispatcher);
-    if (output && typeof output.then === "function") output = yield output;
-    yield* renderChildren(output);
+    if (isThenable(output)) output = yield output as Promise<Children>;
+    yield* renderChildren(output as Children);
     return;
   }
   if (type === Fragment) {
@@ -105,12 +123,20 @@ function* renderNode(node) {
   yield `</${type}>`;
 }
 
-function* renderChildren(children) {
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return !!value && typeof (value as PromiseLike<unknown>).then === "function";
+}
+
+function* renderChildren(children: Children): Render {
   for (const child of toChildArray(children)) yield* renderNode(child);
 }
 
 /** Drives the renderer from `step` on, awaiting async components. Yields one chunk per boundary. */
-async function* renderChunks(steps, step = steps.next(), html = "") {
+async function* renderChunks(
+  steps: Render,
+  step: IteratorResult<Step, void> = steps.next(),
+  html = "",
+): AsyncGenerator<string, void, undefined> {
   while (!step.done) {
     const value = step.value;
     if (value === FLUSH) {
@@ -128,7 +154,7 @@ async function* renderChunks(steps, step = steps.next(), html = "") {
 }
 
 /** The HTML as a string. Async components need the stream, which can wait for them. */
-export function renderToString(element) {
+export function renderToString(element: Children): string {
   let html = "";
   for (const value of renderChildren(element)) {
     if (value === FLUSH) continue;
@@ -144,15 +170,23 @@ export function renderToString(element) {
   return html;
 }
 
+export interface RenderToReadableStreamOptions {
+  /** Called with an error thrown after the first chunk went out; the stream then ends. */
+  onError?(error: unknown): void;
+}
+
 const encoder = new TextEncoder();
 
 /** The HTML as a Web stream: everything before a Suspense boundary goes out before what's in it. */
-export function renderToReadableStream(element, options) {
+export function renderToReadableStream(
+  element: Children,
+  options?: RenderToReadableStreamOptions,
+): ReadableStream<Uint8Array> {
   const chunks = renderChunks(renderChildren(element));
   let started = false;
-  return new ReadableStream({
+  return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      let result;
+      let result: IteratorResult<string, void>;
       try {
         result = await chunks.next();
       } catch (error) {
@@ -166,8 +200,8 @@ export function renderToReadableStream(element, options) {
       started = true;
       controller.enqueue(encoder.encode(result.value));
     },
-    cancel() {
-      return chunks.return();
+    async cancel() {
+      await chunks.return();
     },
   });
 }

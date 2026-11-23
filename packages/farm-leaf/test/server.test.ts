@@ -4,7 +4,7 @@ import {
   defineRendererDescriptorConformance,
   defineRendererServerConformance,
 } from "@farm.js/renderer-tests";
-import { createElement } from "leaf";
+import { createElement, type Children } from "leaf";
 import { describe, expect, it } from "vitest";
 import { compileLeaf, componentName } from "../src/compile.js";
 import { leaf } from "../src/index.js";
@@ -32,8 +32,8 @@ describe("leaf/server streaming", () => {
   const decoder = new TextDecoder();
 
   it("sends what's before a Suspense boundary before an async component inside it resolves", async () => {
-    let open;
-    const gate = new Promise((resolve) => (open = resolve));
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
     async function Report() {
       await gate;
       return createElement("p", null, "report");
@@ -55,8 +55,8 @@ describe("leaf/server streaming", () => {
   });
 
   it("reports a failure after output to onError and ends the stream", async () => {
-    const errors = [];
-    async function Broken() {
+    const errors: string[] = [];
+    async function Broken(): Promise<Children> {
       throw new Error("failed after the boundary");
     }
     const stream = server.renderToReadableStream(
@@ -66,7 +66,7 @@ describe("leaf/server streaming", () => {
         "first",
         createElement(server.Suspense, null, createElement(Broken, null)),
       ),
-      { onError: (error) => errors.push(error.message) },
+      { onError: (error) => errors.push((error as Error).message) },
     );
 
     expect(await new Response(stream).text()).toBe("<main>first");

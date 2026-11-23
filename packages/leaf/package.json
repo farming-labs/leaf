@@ -2,29 +2,39 @@
   "name": "leaf",
   "version": "0.0.0",
   "private": true,
-  "description": "A small UI library that knows nothing about Farm: elements, hooks, a DOM patcher, and an HTML renderer.",
+  "description": "A small library for web user interfaces, in the React mold: function components, hooks, JSX, server rendering that streams, and hydration.",
   "type": "module",
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "default": "./src/index.js"
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./dom": {
-      "types": "./src/dom.d.ts",
-      "default": "./src/dom.js"
+      "types": "./dist/dom.d.ts",
+      "default": "./dist/dom.js"
     },
     "./server": {
-      "types": "./src/server.d.ts",
-      "default": "./src/server.js"
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
     },
     "./jsx-runtime": {
-      "types": "./src/jsx-runtime.d.ts",
-      "default": "./src/jsx-runtime.js"
+      "types": "./dist/jsx-runtime.d.ts",
+      "default": "./dist/jsx-runtime.js"
     },
     "./jsx-dev-runtime": {
-      "types": "./src/jsx-runtime.d.ts",
-      "default": "./src/jsx-runtime.js"
+      "types": "./dist/jsx-runtime.d.ts",
+      "default": "./dist/jsx-runtime.js"
     }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
   }
 }

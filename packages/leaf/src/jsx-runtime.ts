@@ -1,10 +1,25 @@
-import type { AsyncComponent, Children, Component, Key, LeafElement, Ref } from "./index.js";
+// The automatic JSX runtime: `jsxImportSource: "leaf"` compiles <p /> to jsx("p", props).
 
-export { Fragment } from "./index.js";
+import {
+  Fragment,
+  createElement,
+  type AsyncComponent,
+  type Children,
+  type Component,
+  type ElementType,
+  type Key,
+  type LeafElement,
+  type Ref,
+} from "./index.js";
 
-export declare function jsx(type: unknown, props: Record<string, unknown>, key?: Key): LeafElement;
-export declare const jsxs: typeof jsx;
-export declare const jsxDEV: typeof jsx;
+export { Fragment };
+
+export function jsx(type: ElementType, props: Record<string, unknown>, key?: Key): LeafElement {
+  return createElement(type, key === undefined ? props : { ...props, key });
+}
+
+export const jsxs = jsx;
+export const jsxDEV = jsx;
 
 type EventHandler = (event: any) => void;
 

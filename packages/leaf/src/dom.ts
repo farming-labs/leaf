@@ -4,26 +4,107 @@
 // its state, anything else is replaced. There are no keys and no scheduler. A state change
 // re-renders its component in a microtask, and effects run after each commit.
 
-import { depsChanged, internals, toChildArray } from "./index.js";
+import {
+  depsChanged,
+  internals,
+  toChildArray,
+  type Children,
+  type Component,
+  type Dispatcher,
+  type Effect,
+  type LeafElement,
+  type Ref,
+  type SetState,
+} from "./index.js";
 import { RESERVED, attributeName, cssName, eventName, isEventProp, styleValue } from "./props.js";
+
+export interface Root {
+  render(element: Children): void;
+  unmount(): void;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Instances: text, host (a DOM element), component, and root.
 
-function domNodes(instance, out = []) {
+type Props = Record<string, any>;
+type VNode = LeafElement | string;
+
+interface TextInstance {
+  kind: "text";
+  text: string;
+  node: Text;
+  parent: ParentInstance;
+  depth: number;
+  mounted: boolean;
+}
+
+interface HostInstance {
+  kind: "host";
+  type: string;
+  props: Props;
+  node: HTMLElement;
+  ref: Ref<unknown> | null;
+  parent: ParentInstance;
+  depth: number;
+  children: Instance[];
+  mounted: boolean;
+}
+
+interface ComponentInstance {
+  kind: "component";
+  type: Component<any>;
+  props: Props;
+  parent: ParentInstance;
+  depth: number;
+  children: Instance[];
+  hooks: Hook[];
+  mounted: boolean;
+}
+
+interface RootInstance {
+  kind: "root";
+  node: Element;
+  children: Instance[];
+  depth: 0;
+}
+
+type Instance = TextInstance | HostInstance | ComponentInstance;
+type ParentInstance = HostInstance | ComponentInstance | RootInstance;
+
+interface StateHook {
+  state: unknown;
+  set: SetState<unknown>;
+  cleanup?: undefined;
+}
+interface EffectHook {
+  deps: readonly unknown[] | null | undefined;
+  cleanup: (() => void) | undefined;
+}
+interface RefHook {
+  current: unknown;
+  cleanup?: undefined;
+}
+interface MemoHook {
+  deps: readonly unknown[] | null | undefined;
+  value: unknown;
+  cleanup?: undefined;
+}
+type Hook = StateHook | EffectHook | RefHook | MemoHook;
+
+function domNodes(instance: Instance, out: ChildNode[] = []): ChildNode[] {
   if (instance.kind === "text" || instance.kind === "host") out.push(instance.node);
   else for (const child of instance.children) domNodes(child, out);
   return out;
 }
 
-function hostParent(instance) {
+function hostParent(instance: Instance): HostInstance | RootInstance {
   let parent = instance.parent;
   while (parent.kind === "component") parent = parent.parent;
   return parent;
 }
 
 /** Puts a host's child nodes in order, leaving nodes leaf doesn't own after them. */
-function placeChildren(host) {
+function placeChildren(host: HostInstance | RootInstance): void {
   const parent = host.node;
   let cursor = parent.firstChild;
   for (const child of host.children) {
@@ -34,12 +115,12 @@ function placeChildren(host) {
   }
 }
 
-function sameType(instance, vnode) {
+function sameType(instance: Instance, vnode: VNode): boolean {
   if (typeof vnode === "string") return instance.kind === "text";
   return instance.kind !== "text" && instance.type === vnode.type;
 }
 
-function elementType(vnode) {
+function elementType(vnode: LeafElement): "component" | "host" {
   const { type } = vnode;
   if (typeof type === "function") return "component";
   if (typeof type === "string") return "host";
@@ -49,31 +130,39 @@ function elementType(vnode) {
 // ---------------------------------------------------------------------------------------------
 // Props.
 
-function setRef(ref, value) {
+type ListenerNode = HTMLElement & {
+  __leafListeners?: Record<string, ((event: Event) => void) | undefined>;
+};
+
+function setRef(ref: Ref<unknown> | null | undefined, value: unknown): void {
   if (typeof ref === "function") ref(value);
   else if (ref && typeof ref === "object") ref.current = value;
 }
 
-function setStyle(node, next, previous) {
+function setStyle(node: HTMLElement, next: unknown, previous: unknown): void {
   if (typeof next === "string" || next == null) {
-    node.style.cssText = next ?? "";
+    node.style.cssText = (next as string | null | undefined) ?? "";
     return;
   }
   if (previous && typeof previous === "object") {
     for (const name of Object.keys(previous)) {
-      if (!(name in next)) node.style.removeProperty(cssName(name));
+      if (!(name in (next as object))) node.style.removeProperty(cssName(name));
     }
   } else if (typeof previous === "string") {
     node.style.cssText = "";
   }
-  for (const [name, value] of Object.entries(next)) {
+  for (const [name, value] of Object.entries(next as Record<string, unknown>)) {
     const css = value == null || value === false ? "" : String(styleValue(name, value));
     if (name.startsWith("--")) node.style.setProperty(name, css);
-    else node.style[name] = css;
+    else (node.style as unknown as Record<string, string>)[name] = css;
   }
 }
 
-function setListener(node, name, handler) {
+function setListener(
+  node: ListenerNode,
+  name: string,
+  handler: ((event: Event) => void) | undefined,
+): void {
   const event = eventName(name, node.localName);
   const listeners = (node.__leafListeners ??= {});
   if (handler && !(event in listeners)) {
@@ -82,23 +171,34 @@ function setListener(node, name, handler) {
   listeners[event] = handler;
 }
 
-function setProp(node, name, next, previous, hydrating) {
+function setProp(
+  node: HTMLElement,
+  name: string,
+  next: unknown,
+  previous: unknown,
+  hydrating: boolean,
+): void {
   if (RESERVED.has(name)) return;
   if (isEventProp(name, next) || isEventProp(name, previous)) {
-    setListener(node, name, typeof next === "function" ? next : undefined);
+    setListener(
+      node,
+      name,
+      typeof next === "function" ? (next as (event: Event) => void) : undefined,
+    );
     return;
   }
   if (name === "style") {
     if (!hydrating) setStyle(node, next, previous);
     return;
   }
+  const live = node as unknown as Record<string, unknown>;
   if (name === "value" || name === "checked" || name === "selected") {
     // Live properties; what the user typed before hydration stays.
-    if (!hydrating && node[name] !== next) node[name] = next ?? (name === "value" ? "" : false);
+    if (!hydrating && live[name] !== next) live[name] = next ?? (name === "value" ? "" : false);
     return;
   }
   if (name === "defaultValue" || name === "defaultChecked") {
-    if (previous === undefined && !hydrating) node[name] = next;
+    if (previous === undefined && !hydrating) live[name] = next;
     return;
   }
   if (typeof next === "function") return;
@@ -110,7 +210,7 @@ function setProp(node, name, next, previous, hydrating) {
   }
 }
 
-function patchProps(node, next, previous, hydrating = false) {
+function patchProps(node: HTMLElement, next: Props, previous: Props, hydrating = false): void {
   for (const name of Object.keys(previous)) {
     if (!(name in next)) setProp(node, name, undefined, previous[name], hydrating);
   }
@@ -126,63 +226,68 @@ function patchProps(node, next, previous, hydrating = false) {
 // ---------------------------------------------------------------------------------------------
 // Components and hooks.
 
-let pendingEffects = [];
-const dirty = new Set();
+let pendingEffects: Array<{ hook: EffectHook; effect: Effect; instance: ComponentInstance }> = [];
+const dirty = new Set<ComponentInstance>();
 let flushQueued = false;
 
-function createDispatcher(instance) {
+function createDispatcher(instance: ComponentInstance): Dispatcher {
   let index = 0;
-  const slot = (create) => {
+  const slot = <H extends Hook>(create: () => H): H => {
     const position = index++;
     if (position >= instance.hooks.length) instance.hooks.push(create());
-    return instance.hooks[position];
+    return instance.hooks[position] as H;
   };
   return {
-    useState(initial) {
-      const hook = slot(() => {
-        const created = { state: typeof initial === "function" ? initial() : initial };
-        created.set = (action) => {
-          const next = typeof action === "function" ? action(created.state) : action;
-          if (Object.is(next, created.state)) return;
-          created.state = next;
-          schedule(instance);
+    useState<T>(initial: T | (() => T)): [T, SetState<T>] {
+      const hook = slot<StateHook>(() => {
+        const created: StateHook = {
+          state: typeof initial === "function" ? (initial as () => T)() : initial,
+          set: (action) => {
+            const next =
+              typeof action === "function"
+                ? (action as (previous: unknown) => unknown)(created.state)
+                : action;
+            if (Object.is(next, created.state)) return;
+            created.state = next;
+            schedule(instance);
+          },
         };
         return created;
       });
-      return [hook.state, hook.set];
+      return [hook.state as T, hook.set as SetState<T>];
     },
     useEffect(effect, deps) {
-      const hook = slot(() => ({ deps: undefined, cleanup: undefined }));
+      const hook = slot<EffectHook>(() => ({ deps: undefined, cleanup: undefined }));
       if (hook.deps === undefined || depsChanged(hook.deps, deps)) {
         hook.deps = deps ?? null;
         pendingEffects.push({ hook, effect, instance });
       }
     },
-    useRef(initial) {
-      return slot(() => ({ current: initial }));
+    useRef<T>(initial: T): { current: T } {
+      return slot<RefHook>(() => ({ current: initial })) as { current: T };
     },
-    useMemo(compute, deps) {
-      const hook = slot(() => ({ deps: undefined, value: undefined }));
+    useMemo<T>(compute: () => T, deps?: readonly unknown[]): T {
+      const hook = slot<MemoHook>(() => ({ deps: undefined, value: undefined }));
       if (hook.deps === undefined || depsChanged(hook.deps, deps)) {
         hook.deps = deps ?? null;
         hook.value = compute();
       }
-      return hook.value;
+      return hook.value as T;
     },
   };
 }
 
-function renderComponent(instance) {
+function renderComponent(instance: ComponentInstance): VNode[] {
   const output = internals.render(instance.type, instance.props, createDispatcher(instance));
-  if (output && typeof output.then === "function") {
+  if (output && typeof (output as PromiseLike<unknown>).then === "function") {
     throw new Error(
       `leaf can't render async components in the browser: ${instance.type.name || "a component"} returned a promise. Async components render on the server, so use them in a page or layout that doesn't hydrate.`,
     );
   }
-  return toChildArray(output);
+  return toChildArray(output as Children);
 }
 
-function flushEffects() {
+function flushEffects(): void {
   const effects = pendingEffects;
   pendingEffects = [];
   for (const { hook, effect, instance } of effects) {
@@ -193,14 +298,14 @@ function flushEffects() {
   }
 }
 
-function schedule(instance) {
+function schedule(instance: ComponentInstance): void {
   dirty.add(instance);
   if (flushQueued) return;
   flushQueued = true;
   queueMicrotask(flushUpdates);
 }
 
-function flushUpdates() {
+function flushUpdates(): void {
   flushQueued = false;
   const queue = [...dirty].sort((left, right) => left.depth - right.depth);
   dirty.clear();
@@ -215,69 +320,90 @@ function flushUpdates() {
 // ---------------------------------------------------------------------------------------------
 // Mounting, patching, and unmounting.
 
-function createInstance(vnode, parent) {
-  const depth = parent.depth + 1;
-  if (typeof vnode === "string") return { kind: "text", text: vnode, node: null, parent, depth };
-  const kind = elementType(vnode);
-  const instance = { kind, type: vnode.type, props: vnode.props, parent, depth, children: [] };
-  if (kind === "host") {
-    instance.ref = vnode.ref;
-    instance.node = null;
-  } else {
-    instance.hooks = [];
-  }
-  instance.mounted = true;
-  return instance;
+function textInstance(text: string, node: Text, parent: ParentInstance): TextInstance {
+  return { kind: "text", text, node, parent, depth: parent.depth + 1, mounted: true };
 }
 
-function mount(vnode, parent) {
-  const instance = createInstance(vnode, parent);
-  if (instance.kind === "text") {
-    instance.node = document.createTextNode(vnode);
-  } else if (instance.kind === "host") {
-    const node = document.createElement(vnode.type);
-    instance.node = node;
+function hostInstance(vnode: LeafElement, node: HTMLElement, parent: ParentInstance): HostInstance {
+  return {
+    kind: "host",
+    type: vnode.type as string,
+    props: vnode.props,
+    node,
+    ref: vnode.ref,
+    parent,
+    depth: parent.depth + 1,
+    children: [],
+    mounted: true,
+  };
+}
+
+function componentInstance(vnode: LeafElement, parent: ParentInstance): ComponentInstance {
+  return {
+    kind: "component",
+    type: vnode.type as Component<any>,
+    props: vnode.props,
+    parent,
+    depth: parent.depth + 1,
+    children: [],
+    hooks: [],
+    mounted: true,
+  };
+}
+
+function mount(vnode: VNode, parent: ParentInstance): Instance {
+  if (typeof vnode === "string") return textInstance(vnode, document.createTextNode(vnode), parent);
+  if (elementType(vnode) === "host") {
+    const node = document.createElement(vnode.type as string);
+    const instance = hostInstance(vnode, node, parent);
     patchProps(node, vnode.props, {});
     if (vnode.props.dangerouslySetInnerHTML == null) {
       instance.children = toChildArray(vnode.props.children).map((child) => mount(child, instance));
       for (const child of instance.children) for (const dom of domNodes(child)) node.append(dom);
     }
     setRef(instance.ref, node);
-  } else {
-    instance.children = renderComponent(instance).map((child) => mount(child, instance));
+    return instance;
   }
+  const instance = componentInstance(vnode, parent);
+  instance.children = renderComponent(instance).map((child) => mount(child, instance));
   return instance;
 }
 
-function update(instance, vnode) {
+function update(instance: Instance, vnode: VNode): void {
   if (instance.kind === "text") {
-    if (instance.text !== vnode) instance.node.data = instance.text = vnode;
+    const text = vnode as string;
+    if (instance.text !== text) instance.node.data = instance.text = text;
     return;
   }
+  const element = vnode as LeafElement;
   const previous = instance.props;
-  instance.props = vnode.props;
+  instance.props = element.props;
   if (instance.kind === "component") {
     instance.children = reconcileChildren(instance, instance.children, renderComponent(instance));
     return;
   }
-  patchProps(instance.node, vnode.props, previous);
-  if (vnode.props.dangerouslySetInnerHTML == null) {
+  patchProps(instance.node, element.props, previous);
+  if (element.props.dangerouslySetInnerHTML == null) {
     if (previous.dangerouslySetInnerHTML != null) instance.node.textContent = "";
-    const children = toChildArray(vnode.props.children);
+    const children = toChildArray(element.props.children);
     instance.children = reconcileChildren(instance, instance.children, children);
     placeChildren(instance);
   } else {
     for (const child of instance.children) unmount(child, false);
     instance.children = [];
   }
-  if (instance.ref !== vnode.ref) {
+  if (instance.ref !== element.ref) {
     setRef(instance.ref, null);
-    instance.ref = vnode.ref;
+    instance.ref = element.ref;
     setRef(instance.ref, instance.node);
   }
 }
 
-function reconcileChildren(parent, previous, vnodes) {
+function reconcileChildren(
+  parent: ParentInstance,
+  previous: Instance[],
+  vnodes: VNode[],
+): Instance[] {
   const next = vnodes.map((vnode, index) => {
     const existing = previous[index];
     if (existing && sameType(existing, vnode)) {
@@ -291,11 +417,11 @@ function reconcileChildren(parent, previous, vnodes) {
   return next;
 }
 
-function unmount(instance, removeNodes) {
+function unmount(instance: Instance, removeNodes: boolean): void {
   if (removeNodes) for (const node of domNodes(instance)) node.remove();
   instance.mounted = false;
-  dirty.delete(instance);
   if (instance.kind === "text") return;
+  if (instance.kind === "component") dirty.delete(instance);
   for (const child of instance.children) unmount(child, false);
   if (instance.kind === "host") setRef(instance.ref, null);
   else for (const hook of instance.hooks) hook.cleanup?.();
@@ -304,12 +430,16 @@ function unmount(instance, removeNodes) {
 // ---------------------------------------------------------------------------------------------
 // Hydration: adopt the server's nodes instead of creating new ones.
 
-function skipComments(cursor) {
+interface Cursor {
+  node: ChildNode | null;
+}
+
+function skipComments(cursor: Cursor): void {
   while (cursor.node && cursor.node.nodeType === Node.COMMENT_NODE)
     cursor.node = cursor.node.nextSibling;
 }
 
-function hydrate(vnode, parent, cursor, container) {
+function hydrate(vnode: VNode, parent: ParentInstance, cursor: Cursor, container: Node): Instance {
   skipComments(cursor);
   const existing = cursor.node;
   if (typeof vnode === "string") {
@@ -317,54 +447,53 @@ function hydrate(vnode, parent, cursor, container) {
     if (
       existing?.nodeType === Node.TEXT_NODE &&
       vnode.length > 0 &&
-      existing.data.startsWith(vnode)
+      (existing as Text).data.startsWith(vnode)
     ) {
-      if (existing.data.length > vnode.length) existing.splitText(vnode.length);
-      cursor.node = existing.nextSibling;
-      const instance = createInstance(vnode, parent);
-      instance.node = existing;
-      return instance;
+      const text = existing as Text;
+      if (text.data.length > vnode.length) text.splitText(vnode.length);
+      cursor.node = text.nextSibling;
+      return textInstance(vnode, text, parent);
     }
-    const instance = mount(vnode, parent);
+    const instance = mount(vnode, parent) as TextInstance;
     container.insertBefore(instance.node, existing);
     return instance;
   }
   if (elementType(vnode) === "component") {
-    const instance = createInstance(vnode, parent);
+    const instance = componentInstance(vnode, parent);
     instance.children = renderComponent(instance).map((child) =>
       hydrate(child, instance, cursor, container),
     );
     return instance;
   }
-  if (existing?.nodeType !== Node.ELEMENT_NODE || existing.localName !== vnode.type) {
-    const instance = mount(vnode, parent);
+  if (existing?.nodeType !== Node.ELEMENT_NODE || (existing as Element).localName !== vnode.type) {
+    const instance = mount(vnode, parent) as HostInstance;
     container.insertBefore(instance.node, existing);
     return instance;
   }
-  const instance = createInstance(vnode, parent);
-  instance.node = existing;
-  cursor.node = existing.nextSibling;
-  patchProps(existing, vnode.props, {}, true);
+  const node = existing as HTMLElement;
+  const instance = hostInstance(vnode, node, parent);
+  cursor.node = node.nextSibling;
+  patchProps(node, vnode.props, {}, true);
   if (vnode.props.dangerouslySetInnerHTML == null) {
-    const inner = { node: existing.firstChild };
+    const inner: Cursor = { node: node.firstChild };
     instance.children = toChildArray(vnode.props.children).map((child) =>
-      hydrate(child, instance, inner, existing),
+      hydrate(child, instance, inner, node),
     );
     // Whatever the server rendered past the client's children doesn't belong to the tree.
-    for (let node = inner.node; node; ) {
-      const next = node.nextSibling;
-      if (node.nodeType !== Node.COMMENT_NODE) node.remove();
-      node = next;
+    for (let extra = inner.node; extra; ) {
+      const next = extra.nextSibling;
+      if (extra.nodeType !== Node.COMMENT_NODE) extra.remove();
+      extra = next;
     }
   }
-  setRef(instance.ref, existing);
+  setRef(instance.ref, node);
   return instance;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Roots.
 
-function createRootHandle(root) {
+function createRootHandle(root: RootInstance): Root {
   return {
     render(element) {
       root.children = reconcileChildren(root, root.children, toChildArray(element));
@@ -378,13 +507,13 @@ function createRootHandle(root) {
   };
 }
 
-export function createRoot(container) {
+export function createRoot(container: Element): Root {
   return createRootHandle({ kind: "root", node: container, children: [], depth: 0 });
 }
 
-export function hydrateRoot(container, element) {
-  const root = { kind: "root", node: container, children: [], depth: 0 };
-  const cursor = { node: container.firstChild };
+export function hydrateRoot(container: Element, element: Children): Root {
+  const root: RootInstance = { kind: "root", node: container, children: [], depth: 0 };
+  const cursor: Cursor = { node: container.firstChild };
   root.children = toChildArray(element).map((child) => hydrate(child, root, cursor, container));
   flushEffects();
   return createRootHandle(root);
