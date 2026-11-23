@@ -1,0 +1,22 @@
+{
+  "name": "leaf-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@8.12.1",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter leaf-app dev",
+    "build": "pnpm --filter leaf-app build",
+    "start": "node app/.farm/.output/server/index.mjs",
+    "test": "pnpm --filter farm-leaf test",
+    "type-check": "pnpm -r type-check",
+    "test:e2e": "playwright test",
+    "test:e2e:dev": "LEAF_E2E_SERVER=dev playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "typescript": "5.9.3"
+  }
+}
