@@ -13,14 +13,14 @@ export function Counter() {
 }
 ```
 
-If you maintain a client UI library like this, React-like or not, this repo is the shortest path to running it on Farm. `farm-leaf` is the adapter that plugs leaf in, and `app/` is a Farm app that leaf renders: server rendering, hydration, client navigation, server functions, its own file format, and streaming.
+If you maintain a client UI library like this, React-like or not, this repo is the shortest path to running it on Farm. `farm-leaf` is the adapter that plugs leaf in, and `app/` is a Farm app that leaf renders: server rendering, hydration, client navigation, server functions, its own file format, streaming, and docs.
 
 [Bring your own renderer](https://farmjs.dev/blog/bring-your-own-renderer) builds this adapter step by step. This repo is the code it walks through.
 
 ```bash
 pnpm install      # also compiles packages/* to dist/
 pnpm dev          # the app on http://localhost:3000
-pnpm test         # farm-leaf against Farm's renderer conformance suite
+pnpm test         # farm-leaf against Farm's renderer and docs conformance suites
 pnpm test:e2e     # the app in Chrome, as a production build
 pnpm test:e2e:dev # the same tests against farm dev
 ```
@@ -37,7 +37,8 @@ pnpm test:e2e:dev # the same tests against farm dev
 | `packages/farm-leaf/src/client.ts`   | `createElement`, `Suspense`, `createRoot`, and `hydrateRoot` for the browser                 |
 | `packages/farm-leaf/src/vite.ts`     | The Vite plugin: JSX against leaf, and the `.leaf` file compiler                             |
 | `packages/farm-leaf/src/bindings.ts` | `useRouter`, `useTheme`, `useAction`, `useServerQuery`, and `Link` over Farm's client stores |
-| `packages/farm-leaf/test`            | `@farm.js/renderer-tests` suites and a type-check against Farm's contract                    |
+| `packages/farm-leaf/test`            | `@farm.js/renderer-tests` suites, the docs UI suite, and a type-check of Farm's contract     |
+| `app/src/app/docs`                   | Docs pages. `withDocs()` in `app/farm.config.ts` builds them with leaf, so no React ships    |
 | `app/src/ui/toggle.tsx`              | A [ui-sdk](https://ui-sdk.dev) primitive rendered as a leaf component                        |
 | `app/src/app/ui/web/page.tsx`        | The same toggle as a ui-sdk web component                                                    |
 
@@ -57,6 +58,7 @@ Both packages are TypeScript, compiled by `tsc` to `dist/`, the same shape you'd
 - leaf has no refs, so the ui-sdk toggle skips the parts of ui-sdk that need the DOM element, such as focus management in toggle groups.
 - `@ui-sdk/core/renderer`, which the leaf toggle uses, is ui-sdk's undocumented adapter entry. It can change in any release, so the versions here are pinned.
 - React Server Components are React-only.
+- The docs pages compile their Markdown with React on the server. The browser gets leaf and the page's HTML, not React, and docs pages load as full documents rather than client navigations.
 
 ## License
 

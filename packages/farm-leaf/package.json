@@ -38,6 +38,7 @@
   "devDependencies": {
     "@farm.js/core": "0.1.81",
     "@farm.js/renderer-tests": "0.1.0-beta.1",
+    "@farming-labs/farmjs": "0.2.152",
     "jsdom": "^25.0.0",
     "leaf": "workspace:*",
     "typescript": "5.9.3",

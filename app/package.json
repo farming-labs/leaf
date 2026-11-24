@@ -11,10 +11,15 @@
   },
   "dependencies": {
     "@farm.js/core": "0.1.81",
+    "@farming-labs/docs": "0.2.152",
+    "@farming-labs/farmjs": "0.2.152",
+    "@farming-labs/theme": "0.2.152",
     "@ui-sdk/core": "0.1.0-beta.13",
     "@ui-sdk/web": "0.1.0-beta.13",
     "farm-leaf": "workspace:*",
     "leaf": "workspace:*",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "zod": "4.6.7"
   },
   "devDependencies": {
