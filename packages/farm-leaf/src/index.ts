@@ -1,12 +1,18 @@
 // The renderer descriptor an app passes to `renderer` in farm.config.ts.
 
-import { defineRenderer, type FarmRenderer } from "@farm.js/core/renderer";
+import {
+  defineRenderer,
+  type FarmRenderer,
+  type FarmRendererHydration,
+  type FarmRendererRoute,
+  type FarmRendererRouteFile,
+} from "@farm.js/core/renderer";
 
 export function leaf(): FarmRenderer {
   return defineRenderer({
     name: "leaf",
-    // Module ids, not functions: farm.config.ts stays serializable and each module resolves
-    // from the app's own node_modules.
+    // Code that runs in the app is named by module id, so each module resolves from the app's own
+    // node_modules. routes() and hydration.resolve() below run while Farm scans the app.
     vite: "farm-leaf/vite",
     server: "farm-leaf/server",
     client: "farm-leaf/client",
@@ -17,9 +23,53 @@ export function leaf(): FarmRenderer {
       streaming: { node: false, web: true }, // renderToReadableStream() in farm-leaf/server
       reconcilesRerenders: true, // patching keeps same-position DOM nodes and their state
       functionComponents: true, // components are plain functions
-      // When a production hydrateRoot() throws, Farm may render the route with createRoot(), which
-      // empties its container first. Farm reads this after 0.1.81; older versions ignore it.
+      // After a production hydrateRoot() throws, Farm may render the route with createRoot(): the
+      // one in farm-leaf/client empties its container first.
       hydrationFallback: true,
     },
+    // Which files are routes. Farm's folders still work (`about/page.tsx`, `layout.leaf`), and in
+    // `guides/` every .leaf file is a page: `harvest.leaf` is /guides/harvest, `index.leaf` is
+    // /guides, `_layout.leaf` lays the folder out, other `_` files aren't pages, and `.client`
+    // ones hydrate.
+    routes({ defaults }) {
+      return {
+        resolve(file) {
+          return defaults.resolve(file) ?? resolveGuideRoute(file);
+        },
+      };
+    },
+    hydration: {
+      // A .leaf file's own say, in its module script: `// @hydrate` hydrates it, `// @hydrate
+      // visible` (or load, idle, interaction) also says when, and `// @hydrate false` keeps it static.
+      resolve: readHydratePragma,
+    },
   });
+}
+
+function resolveGuideRoute(file: FarmRendererRouteFile): FarmRendererRoute | null {
+  if (file.segments[0] !== "guides" || file.extension !== ".leaf") return null;
+  if (file.name === "_layout") return { kind: "layout", pattern: url(file.segments) };
+  if (file.name.startsWith("_")) return null;
+  const name = file.name.replace(/\.client$/, "");
+  return {
+    kind: "page",
+    pattern: url(name === "index" ? file.segments : [...file.segments, name]),
+    ...(name === file.name ? {} : { hydrate: true }),
+  };
+}
+
+const HYDRATE_PRAGMA =
+  /^[ \t]*\/\/[ \t]*@hydrate(?:[ \t]+(load|idle|visible|interaction|false))?[ \t]*$/m;
+
+function readHydratePragma(source: string): FarmRendererHydration | undefined {
+  const pragma = HYDRATE_PRAGMA.exec(source);
+  if (!pragma) return undefined;
+  if (pragma[1] === "false") return { hydrate: false };
+  return pragma[1]
+    ? { hydrate: true, strategy: pragma[1] as NonNullable<FarmRendererHydration["strategy"]> }
+    : { hydrate: true };
+}
+
+function url(segments: readonly string[]): string {
+  return `/${segments.join("/")}`;
 }
