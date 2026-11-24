@@ -36,7 +36,7 @@
     "type-check": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@farm.js/core": "0.1.81",
+    "@farm.js/core": "0.1.83",
     "@farm.js/renderer-tests": "0.1.0-beta.1",
     "jsdom": "^25.0.0",
     "leaf": "workspace:*",
@@ -45,7 +45,7 @@
     "vitest": "5.0.5"
   },
   "peerDependencies": {
-    "@farm.js/core": ">=0.1.81 <0.3.0",
+    "@farm.js/core": ">=0.1.83 <0.3.0",
     "leaf": "*",
     "vite": "*"
   }
