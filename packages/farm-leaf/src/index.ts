@@ -2,11 +2,19 @@
 
 import {
   defineRenderer,
+  type FarmIslandAttributes,
   type FarmRenderer,
   type FarmRendererHydration,
   type FarmRendererRoute,
   type FarmRendererRouteFile,
 } from "@farm.js/core/renderer";
+
+declare module "leaf/jsx-runtime" {
+  namespace JSX {
+    // `<Counter client:visible />` sets when one island starts, where it's used.
+    interface IntrinsicAttributes extends FarmIslandAttributes {}
+  }
+}
 
 export function leaf(): FarmRenderer {
   return defineRenderer({
@@ -26,6 +34,9 @@ export function leaf(): FarmRenderer {
       // After a production hydrateRoot() throws, Farm may render the route with createRoot(): the
       // one in farm-leaf/client empties its container first.
       hydrationFallback: true,
+      // farm-leaf/server exports withIsland: with experimental.isolatedClientHydration enabled, a
+      // client component rendered from a server page hydrates as its own island.
+      islands: true,
     },
     // Which files are routes. Farm's folders still work (`about/page.tsx`, `layout.leaf`), and in
     // `guides/` every .leaf file is a page: `harvest.leaf` is /guides/harvest, `index.leaf` is

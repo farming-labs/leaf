@@ -10,6 +10,7 @@ import {
   internals,
   toChildArray,
   type Children,
+  type Context,
   type Dispatcher,
   type LeafElement,
 } from "./index.js";
@@ -40,7 +41,28 @@ const serverDispatcher: Dispatcher = {
   useEffect: () => {},
   useRef: (initial) => ({ current: initial }),
   useMemo: (compute) => compute(),
+  useContext: (context) => context.defaultValue,
 };
+
+/** The context values above a node: a chain of frames, null at the top. */
+interface ContextScope {
+  context: Context<unknown>;
+  value: unknown;
+  parent: ContextScope | null;
+}
+
+function dispatcherFor(scope: ContextScope | null): Dispatcher {
+  if (!scope) return serverDispatcher;
+  return {
+    ...serverDispatcher,
+    useContext<T>(context: Context<T>): T {
+      for (let frame: ContextScope | null = scope; frame; frame = frame.parent) {
+        if (frame.context === context) return frame.value as T;
+      }
+      return context.defaultValue;
+    },
+  };
+}
 
 function renderStyle(style: unknown): string {
   if (typeof style === "string") return style;
@@ -87,7 +109,7 @@ const FLUSH: unique symbol = Symbol("leaf.flush");
 type Step = string | typeof FLUSH | Promise<Children>;
 type Render = Generator<Step, void, Children>;
 
-function* renderNode(node: LeafElement | string): Render {
+function* renderNode(node: LeafElement | string, scope: ContextScope | null): Render {
   if (typeof node === "string") {
     yield escapeHtml(node);
     return;
@@ -95,17 +117,20 @@ function* renderNode(node: LeafElement | string): Render {
   const { type, props } = node;
   if (type === Suspense) {
     yield FLUSH;
-    yield* renderChildren(props.children);
+    yield* renderChildren(props.children, scope);
     return;
   }
   if (typeof type === "function") {
-    let output = internals.render(type, props, serverDispatcher);
+    // A context's Provider sets its value for everything it renders.
+    const context = (type as { context?: Context<unknown> }).context;
+    if (context) scope = { context, value: props.value, parent: scope };
+    let output = internals.render(type, props, dispatcherFor(scope));
     if (isThenable(output)) output = yield output as Promise<Children>;
-    yield* renderChildren(output as Children);
+    yield* renderChildren(output as Children, scope);
     return;
   }
   if (type === Fragment) {
-    yield* renderChildren(props.children);
+    yield* renderChildren(props.children, scope);
     return;
   }
   if (typeof type !== "string") {
@@ -118,7 +143,7 @@ function* renderNode(node: LeafElement | string): Render {
   } else if (type === "textarea") {
     yield escapeHtml(props.value ?? props.defaultValue ?? "");
   } else {
-    yield* renderChildren(props.children);
+    yield* renderChildren(props.children, scope);
   }
   yield `</${type}>`;
 }
@@ -127,8 +152,8 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return !!value && typeof (value as PromiseLike<unknown>).then === "function";
 }
 
-function* renderChildren(children: Children): Render {
-  for (const child of toChildArray(children)) yield* renderNode(child);
+function* renderChildren(children: Children, scope: ContextScope | null = null): Render {
+  for (const child of toChildArray(children)) yield* renderNode(child, scope);
 }
 
 /** Drives the renderer from `step` on, awaiting async components. Yields one chunk per boundary. */
