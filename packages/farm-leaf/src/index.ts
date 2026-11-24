@@ -8,6 +8,7 @@ import {
   type FarmRendererRoute,
   type FarmRendererRouteFile,
 } from "@farm.js/core/renderer";
+import { compileLeaf, componentName } from "./compile.js";
 
 declare module "leaf/jsx-runtime" {
   namespace JSX {
@@ -20,7 +21,7 @@ export function leaf(): FarmRenderer {
   return defineRenderer({
     name: "leaf",
     // Code that runs in the app is named by module id, so each module resolves from the app's own
-    // node_modules. routes() and hydration.resolve() below run while Farm scans the app.
+    // node_modules. routes(), hydration.resolve() and compile() below run while Farm scans the app.
     vite: "farm-leaf/vite",
     server: "farm-leaf/server",
     client: "farm-leaf/client",
@@ -53,6 +54,11 @@ export function leaf(): FarmRenderer {
       // A .leaf file's own say, in its module script: `// @hydrate` hydrates it, `// @hydrate
       // visible` (or load, idle, interaction) also says when, and `// @hydrate false` keeps it static.
       resolve: readHydratePragma,
+    },
+    // Farm reads a .leaf file as the module farm-leaf/vite compiles it to, so it finds the
+    // "use client" in a component's module script and plans that component as an island.
+    compile(source, file) {
+      return compileLeaf(source, componentName(file), file);
     },
   });
 }
