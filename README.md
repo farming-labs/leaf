@@ -43,11 +43,21 @@ pnpm test:e2e:dev # the same tests against farm dev
 
 Both packages are TypeScript, compiled by `tsc` to `dist/`, the same shape you'd publish to npm. `pnpm install` builds them through the root `prepare` script; after you edit one, run `pnpm build:packages`.
 
+## Its own route files
+
+Most of `app/src/app` uses Farm's folders: `about/page.tsx` is `/about`. `app/src/app/guides/` uses flat files instead, mapped by `routes()` in `packages/farm-leaf/src/index.ts`:
+
+- `index.leaf` is `/guides`, `harvest.leaf` is `/guides/harvest`, and `[crop].leaf` is a dynamic page.
+- `_layout.leaf` lays the folder out, and other files that start with `_` are components, not pages.
+- `watering.client.leaf` hydrates: the `.client` rule says so.
+
+`hydration.resolve()` in the same file reads leaf's own syntax: `// @hydrate` in a `.leaf` file's module script hydrates it, `// @hydrate visible` (or `load`, `idle`, `interaction`) also says when, and `// @hydrate false` keeps it static. `harvest.leaf` uses it.
+
 ## Make it yours
 
 1. Copy `packages/farm-leaf`.
 2. Point its imports at your library instead of `leaf`: `createElement`, `Fragment`, `Suspense`, `isValidElement`, `renderToString`, `createRoot`, and `hydrateRoot`. Keep `createRoot()` replacing what's already in its container, as the wrapper in `src/client.ts` does, or drop `hydrationFallback` from `src/index.ts`. If your library doesn't stream, drop `renderToReadableStream` and set `streaming.web` to `false` in `src/index.ts` and `src/server.ts`.
-3. Rename the descriptor and the module ids in `src/index.ts`.
+3. Rename the descriptor and the module ids in `src/index.ts`. `routes()` and `hydration` there are optional: drop them to keep Farm's folders and its `export const hydrate`.
 4. Run `pnpm test`. The conformance suite and the contract type-check tell you what's missing.
 
 ## What it doesn't do
