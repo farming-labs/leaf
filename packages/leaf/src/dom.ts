@@ -10,6 +10,7 @@ import {
   toChildArray,
   type Children,
   type Component,
+  type Context,
   type Dispatcher,
   type Effect,
   type LeafElement,
@@ -273,6 +274,14 @@ function createDispatcher(instance: ComponentInstance): Dispatcher {
         hook.value = compute();
       }
       return hook.value as T;
+    },
+    useContext<T>(context: Context<T>): T {
+      for (let parent = instance.parent; parent.kind !== "root"; parent = parent.parent) {
+        if (parent.kind === "component" && parent.type === context.Provider) {
+          return parent.props.value as T;
+        }
+      }
+      return context.defaultValue;
     },
   };
 }

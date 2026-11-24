@@ -85,6 +85,18 @@ export interface Dispatcher {
   useEffect(effect: Effect, deps?: readonly unknown[]): void;
   useRef<T>(initial: T): { current: T };
   useMemo<T>(compute: () => T, deps?: readonly unknown[]): T;
+  useContext<T>(context: Context<T>): T;
+}
+
+/** A value the components below its `Provider` read with `useContext`. */
+export interface Context<T> {
+  readonly defaultValue: T;
+  /** Gives the components below it `value`. */
+  readonly Provider: ContextProvider<T>;
+}
+
+export interface ContextProvider<T> extends Component<{ value: T; children?: Children }> {
+  readonly context: Context<T>;
 }
 
 // The renderer that is running a component installs a dispatcher for the duration of the call.
@@ -135,6 +147,23 @@ export function useRef<T>(initial: T): { current: T } {
 
 export function useMemo<T>(compute: () => T, deps: readonly unknown[]): T {
   return current("useMemo").useMemo(compute, deps);
+}
+
+/**
+ * A value the components below its `Provider` read with `useContext`, without a prop at each
+ * level. A component reads the value of the nearest Provider above it as it renders.
+ */
+export function createContext<T>(defaultValue: T): Context<T> {
+  const Provider = ((props: { value: T; children?: Children }) =>
+    props.children ?? null) as ContextProvider<T>;
+  const context: Context<T> = { defaultValue, Provider };
+  (Provider as { context: Context<T> }).context = context;
+  return context;
+}
+
+/** The value of the nearest `Provider` above the component, or the context's default. */
+export function useContext<T>(context: Context<T>): T {
+  return current("useContext").useContext(context);
 }
 
 export function useCallback<T extends (...args: any[]) => unknown>(
