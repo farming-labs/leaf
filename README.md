@@ -46,7 +46,7 @@ Both packages are TypeScript, compiled by `tsc` to `dist/`, the same shape you'd
 ## Make it yours
 
 1. Copy `packages/farm-leaf`.
-2. Point its imports at your library instead of `leaf`: `createElement`, `Fragment`, `Suspense`, `isValidElement`, `renderToString`, `createRoot`, and `hydrateRoot`. If your library doesn't stream, drop `renderToReadableStream` and set `streaming.web` to `false` in `src/index.ts` and `src/server.ts`.
+2. Point its imports at your library instead of `leaf`: `createElement`, `Fragment`, `Suspense`, `isValidElement`, `renderToString`, `createRoot`, and `hydrateRoot`. Keep `createRoot()` replacing what's already in its container, as the wrapper in `src/client.ts` does, or drop `hydrationFallback` from `src/index.ts`. If your library doesn't stream, drop `renderToReadableStream` and set `streaming.web` to `false` in `src/index.ts` and `src/server.ts`.
 3. Rename the descriptor and the module ids in `src/index.ts`.
 4. Run `pnpm test`. The conformance suite and the contract type-check tell you what's missing.
 
