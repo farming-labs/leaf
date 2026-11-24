@@ -99,6 +99,22 @@ test("links move between docs pages", async ({ page }) => {
   );
 });
 
+test("the table of contents lists the page's sections and marks the one on screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const response = await page.goto("/docs");
+  // The server writes it, so it is there before any script runs.
+  expect(await response!.text()).toContain('id="nd-toc"');
+  const toc = page.locator("#nd-toc");
+  await expect(toc).toBeVisible();
+  await expect(toc.getByRole("link")).toHaveText(["Install", "What runs where"]);
+  const section = toc.getByRole("link", { name: "What runs where" });
+  await section.click();
+  await expect(page).toHaveURL(/#what-runs-where$/);
+  await expect(section).toHaveAttribute("data-active", "true");
+});
+
 test("the mobile sidebar opens, lists the pages, and closes", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/docs/guides/renderer");
