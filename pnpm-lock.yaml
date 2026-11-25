@@ -18,8 +18,8 @@ importers:
   app:
     dependencies:
       '@farm.js/core':
-        specifier: 0.1.86
-        version: 0.1.86
+        specifier: 0.1.87
+        version: 0.1.87
       '@ui-sdk/core':
         specifier: 0.1.0-beta.13
         version: 0.1.0-beta.13
@@ -37,8 +37,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@farm.js/cli':
-        specifier: 0.1.86
-        version: 0.1.86
+        specifier: 0.1.87
+        version: 0.1.87
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -46,8 +46,8 @@ importers:
   packages/farm-leaf:
     devDependencies:
       '@farm.js/core':
-        specifier: 0.1.86
-        version: 0.1.86
+        specifier: 0.1.87
+        version: 0.1.87
       '@farm.js/renderer-tests':
         specifier: 0.1.0-beta.3
         version: 0.1.0-beta.3(vitest@5.0.5)
@@ -158,12 +158,12 @@ packages:
       tslib: 2.9.1
     optional: true
 
-  /@farm.js/cli@0.1.86:
-    resolution: {integrity: sha512-sd5XwKf7Aear9Yfem43R4vLx90GIZMg3DynimPZMAdCEfznkV2Twd6RblKZhU8zRoeSdPtksheTvwwqC5G5zgQ==}
+  /@farm.js/cli@0.1.87:
+    resolution: {integrity: sha512-MgVZJRtYogOLNx3ghJo4m/PpTrKp5hD2PCpdnG7bGKHBF0tQ/CH5kBOQSE1WR7x9LTmJk398U0JnU3fooacojg==}
     engines: {node: '>=22.13.0'}
     hasBin: true
     dependencies:
-      '@farm.js/core': 0.1.86
+      '@farm.js/core': 0.1.87
       '@farm.js/tunnel': 0.1.3
       commander: 11.1.0
       croner: 9.1.0
@@ -234,8 +234,8 @@ packages:
       - yaml
     dev: true
 
-  /@farm.js/core@0.1.86:
-    resolution: {integrity: sha512-T3Yk9gVm04FG1OT5dEH73Wrwacd3i9p0Fa8z8ua2BL8KatF4qHakQy/bkyljhaIJ8ZTZ2ESbyFziKXtAqHjaIw==}
+  /@farm.js/core@0.1.87:
+    resolution: {integrity: sha512-DGNFmBCCVh+9Xds5vlLpOlgXQ87N5yXITXeHgPDI53qkd6q1K3a+3mw/cbJ9ngVgxJ/fVFkodjxfdnRKsDPG4g==}
     engines: {node: '>=22.13.0'}
     peerDependencies:
       '@farming-labs/docs': ^0.2.118
