@@ -22,6 +22,7 @@ If you maintain a client UI library like this, React-like or not, this repo is t
 pnpm install      # also compiles packages/* to dist/
 pnpm dev          # the app on http://localhost:3000
 pnpm test         # farm-leaf against Farm's renderer conformance suite
+pnpm exec playwright install chromium  # once, before the browser tests
 pnpm test:e2e     # the app in Chrome, as a production build
 pnpm test:e2e:dev # the same tests against farm dev
 ```

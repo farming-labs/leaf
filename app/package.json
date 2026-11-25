@@ -10,7 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@farm.js/core": "0.1.84",
+    "@farm.js/core": "0.1.87",
     "@ui-sdk/core": "0.1.0-beta.13",
     "@ui-sdk/web": "0.1.0-beta.13",
     "farm-leaf": "workspace:*",
@@ -18,7 +18,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@farm.js/cli": "0.1.84",
+    "@farm.js/cli": "0.1.87",
     "typescript": "5.9.3"
   }
 }

@@ -8,7 +8,7 @@ export default defineConfig({
     serverActions: true,
     // A client component rendered from a server page hydrates as its own island, through
     // farm-leaf/server's withIsland (`capabilities.islands`).
-    isolatedClientHydration: "enabled",
+    serverComponents: { mode: "islands" },
   },
   deploy: {
     target: "node",

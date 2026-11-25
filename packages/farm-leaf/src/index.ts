@@ -34,7 +34,7 @@ export function leaf(): FarmRenderer {
       // After a production hydrateRoot() throws, Farm may render the route with createRoot(): the
       // one in farm-leaf/client empties its container first.
       hydrationFallback: true,
-      // farm-leaf/server exports withIsland: with experimental.isolatedClientHydration enabled, a
+      // farm-leaf/server exports withIsland: in serverComponents islands mode, a
       // client component rendered from a server page hydrates as its own island.
       islands: true,
     },
