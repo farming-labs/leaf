@@ -3,6 +3,7 @@ import { leaf } from "farm-leaf";
 
 export default defineConfig({
   renderer: leaf(),
+  routeRules: { "/streaming": { render: "dynamic", headers: { Vary: "Sec-Fetch-Dest" } } },
   experimental: {
     // Browser modules can import server functions: each call posts to the page.
     serverActions: true,

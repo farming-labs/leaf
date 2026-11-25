@@ -1,4 +1,4 @@
-import { attrs, handlers } from "@ui-sdk/core/renderer";
+import { attrs, handlers, ref } from "@ui-sdk/core/renderer";
 import { toggle } from "@ui-sdk/core/toggle";
 import { useFarmStore } from "farm-leaf/bindings";
 import { type Children, useMemo } from "leaf";
@@ -22,7 +22,13 @@ export function Toggle(props: ToggleProps) {
   const root = primitive.part("root");
   const on = handlers(root);
   return (
-    <button {...attrs(root)} onClick={on.click} onKeyDown={on.keydown} onKeyUp={on.keyup}>
+    <button
+      ref={ref(root, { by: "framework", attaches: ["click", "keydown", "keyup"] })}
+      {...attrs(root)}
+      onClick={on.click}
+      onKeyDown={on.keydown}
+      onKeyUp={on.keyup}
+    >
       {props.children}
     </button>
   );

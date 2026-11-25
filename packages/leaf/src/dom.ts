@@ -1,15 +1,16 @@
 // leaf/dom: mounts, patches, and hydrates an element tree in the browser.
 //
-// Children match by position: a child of the same type at the same index keeps its DOM node and
-// its state, anything else is replaced. There are no keys and no scheduler. A state change
+// Keyed siblings retain their instances across moves. Unkeyed siblings match by position. A state change
 // re-renders its component in a microtask, and effects run after each commit.
 
 import {
+  Fragment,
   depsChanged,
   internals,
   toChildArray,
   type Children,
   type Component,
+  type Key,
   type Context,
   type Dispatcher,
   type Effect,
@@ -41,6 +42,7 @@ interface TextInstance {
 
 interface HostInstance {
   kind: "host";
+  key: Key | null;
   type: string;
   props: Props;
   node: HTMLElement;
@@ -53,7 +55,8 @@ interface HostInstance {
 
 interface ComponentInstance {
   kind: "component";
-  type: Component<any>;
+  key: Key | null;
+  type: Component<any> | typeof Fragment;
   props: Props;
   parent: ParentInstance;
   depth: number;
@@ -106,11 +109,12 @@ function hostParent(instance: Instance): HostInstance | RootInstance {
 
 /** Puts a host's child nodes in order, leaving nodes leaf doesn't own after them. */
 function placeChildren(host: HostInstance | RootInstance): void {
-  const parent = host.node;
+  const parent = host.node as Element & { moveBefore?(node: Node, before: Node | null): void };
   let cursor = parent.firstChild;
   for (const child of host.children) {
     for (const node of domNodes(child)) {
       if (node === cursor) cursor = cursor.nextSibling;
+      else if (node.parentNode === parent && parent.moveBefore) parent.moveBefore(node, cursor);
       else parent.insertBefore(node, cursor);
     }
   }
@@ -123,7 +127,7 @@ function sameType(instance: Instance, vnode: VNode): boolean {
 
 function elementType(vnode: LeafElement): "component" | "host" {
   const { type } = vnode;
-  if (typeof type === "function") return "component";
+  if (type === Fragment || typeof type === "function") return "component";
   if (typeof type === "string") return "host";
   throw new TypeError(`leaf can't render an element whose type is ${String(type)}.`);
 }
@@ -138,6 +142,28 @@ type ListenerNode = HTMLElement & {
 function setRef(ref: Ref<unknown> | null | undefined, value: unknown): void {
   if (typeof ref === "function") ref(value);
   else if (ref && typeof ref === "object") ref.current = value;
+}
+
+let pendingRefs: Array<() => void> = [];
+
+function attachRef(instance: HostInstance) {
+  const ref = instance.ref;
+  if (ref)
+    pendingRefs.push(() => {
+      if (instance.mounted && instance.ref === ref) setRef(ref, instance.node);
+    });
+}
+
+function commit(place: () => void) {
+  const previous = pendingRefs;
+  pendingRefs = [];
+  try {
+    place();
+    for (const attach of pendingRefs) attach();
+  } finally {
+    pendingRefs = previous;
+  }
+  flushEffects();
 }
 
 function setStyle(node: HTMLElement, next: unknown, previous: unknown): void {
@@ -287,6 +313,7 @@ function createDispatcher(instance: ComponentInstance): Dispatcher {
 }
 
 function renderComponent(instance: ComponentInstance): VNode[] {
+  if (instance.type === Fragment) return toChildArray(instance.props.children);
   const output = internals.render(instance.type, instance.props, createDispatcher(instance));
   if (output && typeof (output as PromiseLike<unknown>).then === "function") {
     throw new Error(
@@ -318,12 +345,13 @@ function flushUpdates(): void {
   flushQueued = false;
   const queue = [...dirty].sort((left, right) => left.depth - right.depth);
   dirty.clear();
-  for (const instance of queue) {
-    if (!instance.mounted) continue;
-    instance.children = reconcileChildren(instance, instance.children, renderComponent(instance));
-    placeChildren(hostParent(instance));
-  }
-  flushEffects();
+  commit(() => {
+    for (const instance of queue) {
+      if (!instance.mounted) continue;
+      instance.children = reconcileChildren(instance, instance.children, renderComponent(instance));
+      placeChildren(hostParent(instance));
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -336,6 +364,7 @@ function textInstance(text: string, node: Text, parent: ParentInstance): TextIns
 function hostInstance(vnode: LeafElement, node: HTMLElement, parent: ParentInstance): HostInstance {
   return {
     kind: "host",
+    key: vnode.key,
     type: vnode.type as string,
     props: vnode.props,
     node,
@@ -350,6 +379,7 @@ function hostInstance(vnode: LeafElement, node: HTMLElement, parent: ParentInsta
 function componentInstance(vnode: LeafElement, parent: ParentInstance): ComponentInstance {
   return {
     kind: "component",
+    key: vnode.key,
     type: vnode.type as Component<any>,
     props: vnode.props,
     parent,
@@ -370,7 +400,7 @@ function mount(vnode: VNode, parent: ParentInstance): Instance {
       instance.children = toChildArray(vnode.props.children).map((child) => mount(child, instance));
       for (const child of instance.children) for (const dom of domNodes(child)) node.append(dom);
     }
-    setRef(instance.ref, node);
+    attachRef(instance);
     return instance;
   }
   const instance = componentInstance(vnode, parent);
@@ -404,7 +434,7 @@ function update(instance: Instance, vnode: VNode): void {
   if (instance.ref !== element.ref) {
     setRef(instance.ref, null);
     instance.ref = element.ref;
-    setRef(instance.ref, instance.node);
+    attachRef(instance);
   }
 }
 
@@ -413,17 +443,45 @@ function reconcileChildren(
   previous: Instance[],
   vnodes: VNode[],
 ): Instance[] {
-  const next = vnodes.map((vnode, index) => {
-    const existing = previous[index];
-    if (existing && sameType(existing, vnode)) {
-      update(existing, vnode);
-      return existing;
+  if (
+    !previous.some((child) => child.kind !== "text" && child.key !== null) &&
+    !vnodes.some((vnode) => typeof vnode !== "string" && vnode.key !== null)
+  ) {
+    const next = vnodes.map((vnode, index) => {
+      const existing = previous[index];
+      if (existing && sameType(existing, vnode)) {
+        update(existing, vnode);
+        return existing;
+      }
+      if (existing) unmount(existing, true);
+      return mount(vnode, parent);
+    });
+    for (const extra of previous.slice(vnodes.length)) unmount(extra, true);
+    return next;
+  }
+  const keyed = new Map<Key, Instance>();
+  for (const child of previous) {
+    if (child.kind !== "text" && child.key !== null) keyed.set(child.key, child);
+  }
+  const retained = new Set<Instance>();
+  const matches = vnodes.map((vnode, index) => {
+    const key = typeof vnode === "string" ? null : vnode.key;
+    const candidate = key === null ? previous[index] : keyed.get(key);
+    if (!candidate || (candidate.kind !== "text" && candidate.key !== key)) return;
+    if (sameType(candidate, vnode) && !retained.has(candidate)) {
+      retained.add(candidate);
+      return candidate;
     }
-    if (existing) unmount(existing, true);
-    return mount(vnode, parent);
   });
-  for (const extra of previous.slice(vnodes.length)) unmount(extra, true);
-  return next;
+  for (const child of previous) {
+    if (!retained.has(child)) unmount(child, true);
+  }
+  return vnodes.map((vnode, index) => {
+    const existing = matches[index];
+    if (!existing) return mount(vnode, parent);
+    update(existing, vnode);
+    return existing;
+  });
 }
 
 function unmount(instance: Instance, removeNodes: boolean): void {
@@ -495,7 +553,7 @@ function hydrate(vnode: VNode, parent: ParentInstance, cursor: Cursor, container
       extra = next;
     }
   }
-  setRef(instance.ref, node);
+  attachRef(instance);
   return instance;
 }
 
@@ -505,9 +563,10 @@ function hydrate(vnode: VNode, parent: ParentInstance, cursor: Cursor, container
 function createRootHandle(root: RootInstance): Root {
   return {
     render(element) {
-      root.children = reconcileChildren(root, root.children, toChildArray(element));
-      placeChildren(root);
-      flushEffects();
+      commit(() => {
+        root.children = reconcileChildren(root, root.children, toChildArray(element));
+        placeChildren(root);
+      });
     },
     unmount() {
       for (const child of root.children) unmount(child, true);
@@ -523,7 +582,8 @@ export function createRoot(container: Element): Root {
 export function hydrateRoot(container: Element, element: Children): Root {
   const root: RootInstance = { kind: "root", node: container, children: [], depth: 0 };
   const cursor: Cursor = { node: container.firstChild };
-  root.children = toChildArray(element).map((child) => hydrate(child, root, cursor, container));
-  flushEffects();
+  commit(() => {
+    root.children = toChildArray(element).map((child) => hydrate(child, root, cursor, container));
+  });
   return createRootHandle(root);
 }

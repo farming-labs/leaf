@@ -1,8 +1,7 @@
 // leaf/server: renders an element tree to HTML, as a string or as a stream. Effects never run on
 // the server and state keeps its initial value.
 //
-// A component may be async in the stream. It sends everything before each <Suspense> boundary as
-// soon as it's rendered, then waits for the async components inside it, in order.
+// Suspense boundaries can stream independently when the caller supplies a fallback.
 
 import {
   Fragment,
@@ -109,15 +108,47 @@ const FLUSH: unique symbol = Symbol("leaf.flush");
 type Step = string | typeof FLUSH | Promise<Children>;
 type Render = Generator<Step, void, Children>;
 
-function* renderNode(node: LeafElement | string, scope: ContextScope | null): Render {
+type Completion = { id: string; html: string; children: Task[] } | { error: unknown };
+type Task = Promise<Completion>;
+type Region = { tasks: Task[]; active(): boolean };
+
+function* renderNode(
+  node: LeafElement | string,
+  scope: ContextScope | null,
+  region?: Region,
+): Render {
   if (typeof node === "string") {
     yield escapeHtml(node);
     return;
   }
   const { type, props } = node;
   if (type === Suspense) {
+    if (region && props.fallback !== undefined) {
+      const children: Task[] = [];
+      const steps = renderChildren(props.children, scope, {
+        tasks: children,
+        active: region.active,
+      });
+      const content = collect(steps, steps.next(), "", region.active);
+      if (typeof content === "string") {
+        region.tasks.push(...children);
+        yield content;
+      } else {
+        const id = "leaf-" + crypto.randomUUID();
+        region.tasks.push(
+          content.then(
+            (html) => ({ id, html, children }),
+            (error: unknown) => ({ error }),
+          ),
+        );
+        yield `<template id="${id}"></template>`;
+        yield* renderChildren(props.fallback, scope);
+        yield `<template id="${id}-end"></template>`;
+      }
+      return;
+    }
     yield FLUSH;
-    yield* renderChildren(props.children, scope);
+    yield* renderChildren(props.children, scope, region);
     return;
   }
   if (typeof type === "function") {
@@ -126,11 +157,11 @@ function* renderNode(node: LeafElement | string, scope: ContextScope | null): Re
     if (context) scope = { context, value: props.value, parent: scope };
     let output = internals.render(type, props, dispatcherFor(scope));
     if (isThenable(output)) output = yield output as Promise<Children>;
-    yield* renderChildren(output as Children, scope);
+    yield* renderChildren(output as Children, scope, region);
     return;
   }
   if (type === Fragment) {
-    yield* renderChildren(props.children, scope);
+    yield* renderChildren(props.children, scope, region);
     return;
   }
   if (typeof type !== "string") {
@@ -143,7 +174,7 @@ function* renderNode(node: LeafElement | string, scope: ContextScope | null): Re
   } else if (type === "textarea") {
     yield escapeHtml(props.value ?? props.defaultValue ?? "");
   } else {
-    yield* renderChildren(props.children, scope);
+    yield* renderChildren(props.children, scope, region);
   }
   yield `</${type}>`;
 }
@@ -152,8 +183,32 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
   return !!value && typeof (value as PromiseLike<unknown>).then === "function";
 }
 
-function* renderChildren(children: Children, scope: ContextScope | null = null): Render {
-  for (const child of toChildArray(children)) yield* renderNode(child, scope);
+function* renderChildren(
+  children: Children,
+  scope: ContextScope | null = null,
+  region?: Region,
+): Render {
+  for (const child of toChildArray(children)) yield* renderNode(child, scope, region);
+}
+
+/** A synchronous subtree stays inline. Resume the same generator if a component suspends. */
+function collect(
+  steps: Render,
+  step: IteratorResult<Step, void>,
+  html: string,
+  active: () => boolean,
+): string | Promise<string> {
+  while (!step.done) {
+    const value = step.value;
+    if (typeof value === "string") html += value;
+    else if (value !== FLUSH) {
+      return Promise.resolve(value).then((result) =>
+        active() ? collect(steps, steps.next(result), html, active) : "",
+      );
+    }
+    step = steps.next();
+  }
+  return html;
 }
 
 /** Drives the renderer from `step` on, awaiting async components. Yields one chunk per boundary. */
@@ -196,37 +251,109 @@ export function renderToString(element: Children): string {
 }
 
 export interface RenderToReadableStreamOptions {
-  /** Called with an error thrown after the first chunk went out; the stream then ends. */
+  /** Set false for buffered HTML consumers that never execute reveal scripts. */
+  progressive?: boolean;
+  /** CSP nonce for the inline script that reveals a completed boundary. */
+  nonce?: string;
+  /** Reports a late error. A failed deferred boundary keeps its fallback while siblings finish. */
   onError?(error: unknown): void;
 }
 
 const encoder = new TextEncoder();
 
-/** The HTML as a Web stream: everything before a Suspense boundary goes out before what's in it. */
+// The payload stays in a template. Only this fixed script runs, and it removes its own markers.
+const REVEAL = `(() => {
+  const script = document.currentScript;
+  const payload = script.previousElementSibling;
+  const id = payload.dataset.leafReveal;
+  const start = document.getElementById(id);
+  const end = document.getElementById(id + "-end");
+  if (start && end && start.parentNode === end.parentNode) {
+    const range = document.createRange();
+    range.setStartBefore(start);
+    range.setEndAfter(end);
+    range.deleteContents();
+    range.insertNode(payload.content);
+  }
+  payload.remove();
+  script.remove();
+})()`;
+
 export function renderToReadableStream(
   element: Children,
   options?: RenderToReadableStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const chunks = renderChunks(renderChildren(element));
+  let active = true;
+  const region: Region = { tasks: [], active: () => active };
+  const shell = renderChunks(
+    renderChildren(element, null, options?.progressive === false ? undefined : region),
+  );
+  const ready: Completion[] = [];
+  let pending = 0;
+  let wake: (() => void) | undefined;
+  let shellDone = false;
   let started = false;
+
+  function track(tasks: Task[]) {
+    pending += tasks.length;
+    for (const task of tasks)
+      task.then((part) => {
+        if (!active) return;
+        ready.push(part);
+        wake?.();
+      });
+  }
+
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      let result: IteratorResult<string, void>;
       try {
-        result = await chunks.next();
+        if (!shellDone) {
+          const part = await shell.next();
+          if (!active) return;
+          if (!part.done) {
+            started = true;
+            controller.enqueue(encoder.encode(part.value));
+            return;
+          }
+          shellDone = true;
+          track(region.tasks.splice(0));
+        }
+        while (pending) {
+          if (!ready.length)
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          wake = undefined;
+          if (!active) return;
+          const part = ready.shift()!;
+          pending--;
+          if ("error" in part) {
+            options?.onError?.(part.error);
+            continue;
+          }
+          track(part.children);
+          const nonce = options?.nonce ? ` nonce="${escapeHtml(options.nonce)}"` : "";
+          controller.enqueue(
+            encoder.encode(
+              `<template data-leaf-reveal="${part.id}">${part.html}</template><script${nonce}>${REVEAL}</script>`,
+            ),
+          );
+          return;
+        }
+        active = false;
+        controller.close();
       } catch (error) {
-        // Before any output, the error decides the status. After it, the status is already
-        // sent, so report the error and end the document.
+        if (!active) return;
+        active = false;
         if (!started) return controller.error(error);
         options?.onError?.(error);
-        return controller.close();
+        controller.close();
       }
-      if (result.done) return controller.close();
-      started = true;
-      controller.enqueue(encoder.encode(result.value));
     },
-    async cancel() {
-      await chunks.return();
+    cancel() {
+      active = false;
+      wake?.();
+      void shell.return();
     },
   });
 }
