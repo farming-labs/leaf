@@ -28,22 +28,23 @@ pnpm test:e2e:dev # the same tests against farm dev
 
 ## What's where
 
-| Path                                 | What it is                                                                                           |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `packages/leaf/src/index.ts`         | The UI library: elements, components, and hooks. No Farm code in the package.                        |
-| `packages/leaf/src/dom.ts`           | `createRoot` and `hydrateRoot`: mounts, patches, and hydrates in the browser                         |
-| `packages/leaf/src/server.ts`        | `renderToString` and `renderToReadableStream`                                                        |
-| `packages/farm-leaf/src/index.ts`    | The descriptor: `renderer: leaf()` in `farm.config.ts`                                               |
-| `packages/farm-leaf/src/server.ts`   | Six named exports Farm renders routes with on the server, `renderToReadableStream`, and `withIsland` |
-| `packages/farm-leaf/src/client.ts`   | `createElement`, `Suspense`, `createRoot`, and `hydrateRoot` for the browser                         |
-| `packages/farm-leaf/src/vite.ts`     | The Vite plugin: compiles `.leaf` files, and JSX in `.tsx` files, against leaf                       |
-| `packages/farm-leaf/src/compile.ts`  | The `.leaf` compiler: markup in, a module whose default export is the component out                  |
-| `packages/farm-leaf/src/bindings.ts` | `useRouter`, `useTheme`, `useAction`, `useServerQuery`, and `Link` over Farm's client stores         |
-| `packages/farm-leaf/test`            | `@farm.js/renderer-tests` suites and a type-check against Farm's contract                            |
-| `app/src/app/**/*.leaf`              | Every page but `ui/` and `islands/`: layout, pages, error and not-found pages, in leaf's own format  |
-| `app/src/app/islands/page.tsx`       | A server page whose client components hydrate as islands, each when its `client:*` says              |
-| `app/src/ui/toggle.tsx`              | A [ui-sdk](https://ui-sdk.dev) primitive rendered as a leaf component, in JSX                        |
-| `app/src/app/ui/web/page.tsx`        | The same toggle as a ui-sdk web component                                                            |
+| Path                                 | What it is                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `packages/leaf/src/index.ts`         | The UI library: elements, components, and hooks. No Farm code in the package.                               |
+| `packages/leaf/src/dom.ts`           | `createRoot` and `hydrateRoot`: mounts, patches, and hydrates in the browser                                |
+| `packages/leaf/src/server.ts`        | `renderToString` and `renderToReadableStream`                                                               |
+| `packages/farm-leaf/src/index.ts`    | The descriptor: `renderer: leaf()` in `farm.config.ts`                                                      |
+| `packages/farm-leaf/src/server.ts`   | Six named exports Farm renders routes with on the server, `renderToReadableStream`, and `withIsland`        |
+| `packages/farm-leaf/src/client.ts`   | `createElement`, `Suspense`, `createRoot`, and `hydrateRoot` for the browser                                |
+| `packages/farm-leaf/src/vite.ts`     | The Vite plugin: compiles `.leaf` files, and JSX in `.tsx` files, against leaf                              |
+| `packages/farm-leaf/src/compile.ts`  | The `.leaf` compiler: markup in, a module whose default export is the component out                         |
+| `packages/farm-leaf/src/bindings.ts` | `useRouter`, `useTheme`, `useAction`, `useServerQuery`, and `Link` over Farm's client stores                |
+| `packages/farm-leaf/test`            | `@farm.js/renderer-tests` suites and a type-check against Farm's contract                                   |
+| `app/src/app/**/*.leaf`              | Every page but `ui/` and `islands/page.tsx`: layout, pages, error and not-found pages, in leaf's own format |
+| `app/src/app/islands/page.tsx`       | A server page whose client components hydrate as islands, each when its `client:*` says                     |
+| `app/src/app/islands/leaf/page.leaf` | The same with `.leaf` client components, from `app/src/components/planter.leaf`                             |
+| `app/src/ui/toggle.tsx`              | A [ui-sdk](https://ui-sdk.dev) primitive rendered as a leaf component, in JSX                               |
+| `app/src/app/ui/web/page.tsx`        | The same toggle as a ui-sdk web component                                                                   |
 
 Both packages are TypeScript, compiled by `tsc` to `dist/`, the same shape you'd publish to npm. `pnpm install` builds them through the root `prepare` script; after you edit one, run `pnpm build:packages`.
 
@@ -68,6 +69,8 @@ notes/page.leaf:18: `onClick={...}` is JSX. In a .leaf file, write `@click="..."
 
 `.tsx` files with JSX work too, as `app/src/app/ui/` shows.
 
+A `.leaf` component can be a client component: put `"use client"` first in its module script. Rendered from a server page, it hydrates as an island. `compile()` in `packages/farm-leaf/src/index.ts` lets Farm read a `.leaf` file as the module it compiles to, so it finds that `"use client"`. `app/src/app/islands/leaf/page.leaf` renders two `planter.leaf` islands.
+
 ## Its own route files
 
 Most of `app/src/app` uses Farm's folders: `about/page.leaf` is `/about`. `app/src/app/guides/` uses flat files instead, mapped by `routes()` in `packages/farm-leaf/src/index.ts`:
@@ -85,6 +88,7 @@ Most of `app/src/app` uses Farm's folders: `about/page.leaf` is `/about`. `app/s
 3. Rename the descriptor and the module ids in `src/index.ts`. `routes()` and `hydration` there are optional: drop them to keep Farm's folders and its `export const hydrate`.
 4. Run `pnpm test`. The conformance suite and the contract type-check tell you what's missing.
 5. For islands, keep `withIsland`, `wrapClientGraph` and `isolateServerPageGraph` in `src/server.ts`. They need a context in your library, as `createContext` is in leaf. Otherwise drop them and `islands` from `src/index.ts`. See [Islands](https://farmjs.dev/docs/renderers/custom#islands).
+6. If your library has its own file format, point `compile()` in `src/index.ts` at your compiler, so Farm can read your files' `"use client"` and imports. Drop it if your components are `.tsx`.
 
 ## Keys, refs and streaming
 
