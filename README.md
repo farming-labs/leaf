@@ -2,7 +2,7 @@
 
 **A tiny library for web user interfaces, and the adapter that runs it on [Farm.js](https://farmjs.dev).**
 
-leaf is a small client UI library. You write components as `.leaf` files: HTML with `{{ values }}`, `@events`, and `<leaf:if>` and `<leaf:for>` tags, plus a script that keeps state in hooks. leaf renders to HTML on the server, streams, and hydrates in the browser, in about 1,000 lines of TypeScript. It knows nothing about Farm.
+leaf is a small client UI library. You write components as `.leaf` files: HTML with `{{ values }}`, `@events`, and `<leaf:if>` and `<leaf:for>` tags, plus a script that keeps state in hooks. leaf renders to HTML on the server, streams, and hydrates in the browser. It knows nothing about Farm.
 
 ```html
 <!-- counter.leaf -->
@@ -91,11 +91,15 @@ Most of `app/src/app` uses Farm's folders: `about/page.leaf` is `/about`. `app/s
 5. For islands, keep `withIsland`, `wrapClientGraph` and `isolateServerPageGraph` in `src/server.ts`. They need a context in your library, as `createContext` is in leaf. Otherwise drop them and `islands` from `src/index.ts`. See [Islands](https://farmjs.dev/docs/renderers/custom#islands).
 6. If your library has its own file format, point `compile()` in `src/index.ts` at your compiler, so Farm can read your files' `"use client"` and imports. Drop it if your components are `.tsx`.
 
-## What it doesn't do
+## Keys, refs and streaming
 
-- leaf streams in order: a `<Suspense>` boundary sends what came before it, then waits for the async components inside. It never shows `fallback`, and async components render on the server only, so a page that has one doesn't hydrate.
-- leaf matches children by position and has no keys, so reordering a list re-renders its items.
-- leaf has no refs, so the ui-sdk toggle skips the parts of ui-sdk that need the DOM element, such as focus management in toggle groups.
+Use a stable sibling key, such as `<Crop key={crop.id} />`, to keep each item's DOM nodes and state when it moves. Unkeyed siblings match by position. Host elements accept an object ref or a callback. Leaf assigns the mounted or hydrated node after placement and clears the ref on replacement or unmount.
+
+A pending `<Suspense fallback="Loading…">` streams its fallback and reveals its children when ready. A later sibling can finish first. The reveal script uses the response nonce when supplied. Boundaries without a fallback stream in document order. For consumers that insert HTML without running scripts, `renderToReadableStream(tree, { progressive: false })` produces resolved markup. The Farm streaming page supplies its fallback on document loads and varies the response on `Sec-Fetch-Dest`.
+
+## Current limits
+
+- Async components render on the server. Use the stream for a tree that can suspend.
 - `@ui-sdk/core/renderer`, which the leaf toggle uses, is ui-sdk's undocumented adapter entry. It can change in any release, so the versions here are pinned.
 - React Server Components are React-only.
 - TypeScript doesn't check `.leaf` files: it can't read the markup. Their scripts may use TypeScript syntax, which the compiler strips. Write code that needs type-checking in `.ts` or `.tsx` files.
